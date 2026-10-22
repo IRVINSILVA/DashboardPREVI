@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PREVI-Piura | Dashboard</title>
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800">
+<header class="bg-gradient-to-r from-blue-900 to-sky-700 text-white px-6 py-5">
+  <h1 class="text-2xl font-bold">PREVI-Piura 2024-2033 · Panel de Seguimiento</h1>
+  <p class="text-sm text-sky-100">Plan Regional de Vivienda · GORE Piura / DRVCS</p>
+</header>
+<main class="max-w-7xl mx-auto p-4 space-y-5">
+  <section class="bg-white rounded-xl shadow p-4 grid sm:grid-cols-2 gap-4">
+    <label class="text-sm font-semibold">Provincia
+      <select id="prov" class="mt-1 w-full border rounded-lg p-2 font-normal"></select></label>
+    <label class="text-sm font-semibold">Distrito
+      <select id="dist" class="mt-1 w-full border rounded-lg p-2 font-normal"></select></label>
+  </section>
+  <p id="loc" class="text-lg font-semibold text-blue-900"></p>
+  <section id="cards" class="grid sm:grid-cols-2 lg:grid-cols-5 gap-3"></section>
+  <section class="grid lg:grid-cols-3 gap-4">
+    <div class="bg-white rounded-xl shadow p-4 lg:col-span-2">
+      <h2 class="font-semibold mb-2 text-sm">Déficit cualitativo (%): línea base vs metas, por unidad territorial</h2>
+      <div class="h-72"><canvas id="c1"></canvas></div></div>
+    <div class="bg-white rounded-xl shadow p-4">
+      <h2 class="font-semibold mb-2 text-sm">Composición del déficit habitacional (línea base)</h2>
+      <div class="h-72"><canvas id="c2"></canvas></div></div>
+  </section>
+  <section class="bg-white rounded-xl shadow p-4">
+    <div class="flex flex-wrap items-center gap-3 mb-2">
+      <h2 class="font-semibold text-sm">Trayectoria de metas 2022-2033:</h2>
+      <select id="kpi" class="border rounded-lg p-1 text-sm"></select></div>
+    <div class="h-64"><canvas id="c3"></canvas></div></section>
+  <p class="text-xs text-slate-500">Datos regionales: PDF del PREVI-Piura. Valores provinciales y distritales: <b>estimaciones</b> por pesos poblacionales y de riesgo, no cifras oficiales. "Avance programado" = parte del recorrido línea base→meta 2033 prevista para 2026.</p>
+</main>
+<script>
+const Y=[2022,2026,2029,2033];
+const K={
+ cu:{n:'Déficit cualitativo',u:'%',t:'rate',v:[11.2,9.2,6.5,3.3]},
+ cn:{n:'Déficit cuantitativo',u:'%',t:'rate',v:[5.2,4.2,2.5,0]},
+ ha:{n:'Suelo en Bolsa de Tierras',u:'Ha',t:'flow',s:'s',v:[0,80,250,500]},
+ bfh:{n:'BFH en CSP',u:'bonos/año',t:'flow',s:'w',v:[3200,4500,6500,8500]},
+ fam:{n:'Familias reasentadas (FEN)',u:'familias',t:'flow',s:'r',v:[0,300,900,2000]}};
+const P=[
+ ['Piura',.36,.85,1.25,.30,.30,[['Piura',.30,1],['Castilla',.25,1],['Veintiséis de Octubre',.22,1.15],['Catacaos',.10,1.2],['Otros distritos',.13,1]]],
+ ['Sullana',.20,.95,1.2,.22,.25,[['Sullana',.35,1],['Bellavista',.15,1.1],['Marcavelica',.10,1],['Querecotillo',.10,1],['Otros distritos',.30,1]]],
+ ['Talara',.07,.8,1.0,.12,.05,[['Pariñas',.55,1],['Los Órganos',.10,.9],['Máncora',.10,.9],['Otros distritos',.25,1]]],
+ ['Paita',.06,1.0,1.1,.10,.08,[['Paita',.50,1],['La Huaca',.12,1],['Colán',.10,1.1],['Otros distritos',.28,1]]],
+ ['Morropón',.09,1.3,.6,.08,.15,[['Chulucanas',.50,1],['Morropón',.12,1],['Buenos Aires',.08,1.1],['Otros distritos',.30,1.1]]],
+ ['Huancabamba',.08,1.7,.3,.05,.05,[['Huancabamba',.30,.9],['Huarmaca',.35,1.1],['Sondorillo',.15,1],['Otros distritos',.20,1]]],
+ ['Ayabaca',.09,1.7,.3,.05,.05,[['Ayabaca',.30,.9],['Sapillica',.12,1],['Suyo',.12,1],['Otros distritos',.46,1.1]]],
+ ['Sechura',.05,1.0,.9,.08,.07,[['Sechura',.50,1],['Bernal',.15,1],['Vice',.15,1],['Otros distritos',.20,1]]]];
+const $=id=>document.getElementById(id);
+const REG='Toda la Región',ALL='Toda la Provincia';
+function unit(pi,di){
+ if(pi<0)return{name:'Región Piura',f:{cu:1,cn:1},sh:{s:1,w:1,r:1}};
+ const p=P[pi];let f={cu:p[2],cn:p[3]},sh={s:p[4],w:p[1],r:p[5]},name=p[0];
+ if(di>=0){const d=p[6][di];f={cu:f.cu*d[2],cn:f.cn*(2-d[2])};sh={s:sh.s*d[1],w:sh.w*d[1],r:sh.r*d[1]};name=d[0]+' ('+p[0]+')';}
+ return{name,f,sh};}
+function series(k,u){const o=K[k];return o.v.map(v=>o.t==='rate'?v*u.f[k]:v*u.sh[o.s]);}
+const fmt=(v,k)=>K[k].t==='rate'?v.toFixed(2)+'%':(v<10&&v>0?v.toFixed(1):Math.round(v).toLocaleString('es-PE'));
+$('prov').innerHTML='<option value="-1">'+REG+'</option>'+P.map((p,i)=>`<option value="${i}">${p[0]}</option>`).join('');
+$('kpi').innerHTML=Object.keys(K).map(k=>`<option value="${k}">${K[k].n} (${K[k].u})</option>`).join('');
+function fillDist(){const pi=+$('prov').value;
+ $('dist').innerHTML=pi<0?'<option value="-1">Nivel Regional</option>':'<option value="-1">'+ALL+'</option>'+P[pi][6].map((d,i)=>`<option value="${i}">${d[0]}</option>`).join('');
+ $('dist').disabled=pi<0;}
+let c1,c2,c3;
+const col=['#94a3b8','#38bdf8','#1e3a8a'];
+function render(){
+ const pi=+$('prov').value,di=+$('dist').value,u=unit(pi,di);
+ $('loc').textContent='📍 '+u.name;
+ $('cards').innerHTML=Object.keys(K).map(k=>{const s=series(k,u),o=K[k];
+  const av=Math.max(0,Math.min(100,(s[1]-s[0])/((s[3]-s[0])||1)*100));
+  return`<div class="bg-white rounded-xl shadow p-3 border-t-4 border-sky-600">
+  <div class="text-xs text-slate-500 font-semibold">${o.n}</div>
+  <div class="text-2xl font-bold text-blue-900">${fmt(s[0],k)}</div>
+  <div class="text-[11px] text-slate-500">Línea base · ${o.u}</div>
+  <div class="text-xs mt-1">Meta 2026: <b>${fmt(s[1],k)}</b> · Meta 2033: <b>${fmt(s[3],k)}</b></div>
+  <div class="h-2 bg-slate-200 rounded mt-2"><div class="h-2 rounded bg-emerald-500" style="width:${av.toFixed(0)}%"></div></div>
+  <div class="text-[11px] text-slate-500">Avance programado 2026: ${av.toFixed(0)}%</div></div>`}).join('');
+ let units,labels;
+ if(pi<0){units=P.map((_,i)=>unit(i,-1));labels=P.map(p=>p[0]);}
+ else{units=P[pi][6].map((_,i)=>unit(pi,i));labels=P[pi][6].map(d=>d[0]);}
+ const sets=[0,1,3].map((ix,j)=>({label:['Línea base 2022','Meta 2026','Meta 2033'][j],backgroundColor:col[j],data:units.map(x=>+(K.cu.v[ix]*x.f.cu).toFixed(2))}));
+ c1&&c1.destroy();
+ c1=new Chart($('c1'),{type:'bar',data:{labels,datasets:sets},options:{responsive:true,maintainAspectRatio:false,scales:{y:{title:{display:true,text:'% de hogares'}}}}});
+ const a=K.cu.v[0]*u.f.cu,b=K.cn.v[0]*u.f.cn;
+ c2&&c2.destroy();
+ c2=new Chart($('c2'),{type:'doughnut',data:{labels:['Cualitativo','Cuantitativo'],datasets:[{data:[+a.toFixed(2),+b.toFixed(2)],backgroundColor:['#0ea5e9','#f59e0b']}]},
+  options:{responsive:true,maintainAspectRatio:false,plugins:{tooltip:{callbacks:{label:c=>c.label+': '+c.parsed+'% de hogares ('+(c.parsed/(a+b)*100).toFixed(0)+'% del déficit)'}}}}});
+ const k=$('kpi').value,s=series(k,u);
+ c3&&c3.destroy();
+ c3=new Chart($('c3'),{type:'line',data:{labels:Y,datasets:[{label:K[k].n+' ('+K[k].u+')',data:s.map(v=>+v.toFixed(2)),borderColor:'#1e3a8a',backgroundColor:'rgba(56,189,248,.25)',fill:true,tension:.3,pointRadius:5}]},
+  options:{responsive:true,maintainAspectRatio:false}});
+}
+$('prov').onchange=()=>{fillDist();render();};
+$('dist').onchange=render;$('kpi').onchange=render;
+fillDist();render();
+</script>
+</body>
+</html>
